@@ -8,6 +8,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import java.math.BigInteger
+import kotlin.time.times
 
 private class BigIntegerSerializer : KSerializer<BigInteger> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BigInteger", PrimitiveKind.STRING)
@@ -47,24 +48,35 @@ data class Rational private constructor (
             denominator * other.denominator
         )
     }
+    operator fun plus(other: Int): Rational = this + Rational.from(other)
+    operator fun plus(other: Long): Rational = this + Rational.from(other)
+
     operator fun minus(other: Rational): Rational {
         return Rational.from(
             numerator * other.denominator - other.numerator * denominator,
             denominator * other.denominator
         )
     }
+    operator fun minus(other: Int): Rational = this - Rational.from(other)
+    operator fun minus(other: Long): Rational = this - Rational.from(other)
+
     operator fun times(other: Rational): Rational {
         return Rational.from(
             numerator * other.numerator,
             denominator * other.denominator
         )
     }
+    operator fun times(other: Int): Rational = this * Rational.from(other)
+    operator fun times(other: Long): Rational = this * Rational.from(other)
+
     operator fun div(other: Rational): Rational {
         return Rational.from(
             numerator * other.denominator,
             denominator * other.numerator
         )
     }
+    operator fun div(other: Int): Rational = this / Rational.from(other)
+    operator fun div(other: Long): Rational = this / Rational.from(other)
 
     operator fun unaryMinus(): Rational {
         return Rational(-numerator, denominator)
@@ -78,6 +90,7 @@ data class Rational private constructor (
         val zero     = Rational(BigInteger.ZERO, BigInteger.ONE)
         val one      = Rational(BigInteger.ONE, BigInteger.ONE)
         val minusOne = Rational(BigInteger.ONE.negate(), BigInteger.ONE)
+        val half     = Rational(BigInteger.ONE, BigInteger.valueOf(2))
 
         fun parse(s: String): Rational {
             val parts = s.split("/")

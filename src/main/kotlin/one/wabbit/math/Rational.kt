@@ -28,7 +28,7 @@ private class BigIntegerSerializer : KSerializer<BigInteger> {
     }
 }
 
-@Serializable
+@Serializable @ConsistentCopyVisibility
 data class Rational private constructor (
     val numerator: @Serializable(with=BigIntegerSerializer::class) BigInteger,
     val denominator: @Serializable(with=BigIntegerSerializer::class) BigInteger

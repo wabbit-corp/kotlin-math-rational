@@ -1,14 +1,15 @@
 package one.wabbit.math
+
 import java.math.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-class RationalTests {
+class RationalSpec {
     @Test
     fun testCompareOptimization() {
-        val huge1 = Rational.from(BigInteger("1").shiftLeft(5000), BigInteger.ONE)  // 2^5000
-        val huge2 = Rational.from(BigInteger("1").shiftLeft(6000), BigInteger.ONE)  // 2^6000
+        val huge1 = Rational.from(BigInteger("1").shiftLeft(5000), BigInteger.ONE) // 2^5000
+        val huge2 = Rational.from(BigInteger("1").shiftLeft(6000), BigInteger.ONE) // 2^6000
 
         // obviously huge2 > huge1
         assertTrue(huge2 > huge1, "2^6000 should be > 2^5000")
@@ -16,13 +17,14 @@ class RationalTests {
 
     @Test
     fun testMod() {
-        val a = Rational.from(7, 3)   // 7/3
-        val b = Rational.from(2, 1)   // 2
-        // 7/3 = 2 + 1/3 => floor(7/3 / 2) = floor(7/6) = 1 => remainder is 7/3 - 1*2 = 7/3 - 2 = 1/3
+        val a = Rational.from(7, 3) // 7/3
+        val b = Rational.from(2, 1) // 2
+        // 7/3 = 2 + 1/3 => floor(7/3 / 2) = floor(7/6) = 1 => remainder is 7/3 - 1*2 = 7/3 - 2 =
+        // 1/3
         assertEquals(Rational.from(1, 3), a.rem(b))
 
         // negative test
-        val c = Rational.from(-7, 3)  // -7/3
+        val c = Rational.from(-7, 3) // -7/3
         // -7/3 / 2 = -7/6 => floor(-7/6) = -2 (since -7/6 ~ -1.166..., floor is -2)
         // remainder = -7/3 - (-2)*2 = -7/3 + 4 = (-7 + 12)/3 = 5/3
         assertEquals(Rational.from(5, 3), c.rem(b))

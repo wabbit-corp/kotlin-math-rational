@@ -1,6 +1,7 @@
+// SPDX-License-Identifier: LicenseRef-Wabbit-Public-Test-License-1.1
+
 package one.wabbit.math
 
-import java.math.BigInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -8,10 +9,9 @@ import kotlin.test.assertTrue
 class RationalSpec {
     @Test
     fun testCompareOptimization() {
-        val huge1 = Rational.from(BigInteger("1").shiftLeft(5000), BigInteger.ONE) // 2^5000
-        val huge2 = Rational.from(BigInteger("1").shiftLeft(6000), BigInteger.ONE) // 2^6000
+        val huge1 = Rational.from(2).pow(5000)
+        val huge2 = Rational.from(2).pow(6000)
 
-        // obviously huge2 > huge1
         assertTrue(huge2 > huge1, "2^6000 should be > 2^5000")
     }
 

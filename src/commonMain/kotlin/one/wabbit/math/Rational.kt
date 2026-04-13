@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package one.wabbit.math
 
-import java.math.BigInteger
+import com.ionspin.kotlin.bignum.integer.BigInteger
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -18,6 +20,55 @@ enum class RoundMode {
     HALF_EVEN,
 }
 
+private fun parseBigInteger(text: String): BigInteger =
+    BigInteger.parseString(text.trim().removePrefix("+"))
+
+private fun bigInt(value: Long): BigInteger = parseBigInteger(value.toString())
+
+private val BIG_INT_ZERO = bigInt(0)
+private val BIG_INT_ONE = bigInt(1)
+private val BIG_INT_TWO = bigInt(2)
+private val BIG_INT_MINUS_ONE = bigInt(-1)
+
+private fun signAsBigInteger(sign: Int): BigInteger =
+    when (sign) {
+        -1 -> BIG_INT_MINUS_ONE
+        0 -> BIG_INT_ZERO
+        1 -> BIG_INT_ONE
+        else -> throw IllegalArgumentException("unexpected sign: $sign")
+    }
+
+private fun gcd(a: BigInteger, b: BigInteger): BigInteger {
+    var x = a.abs()
+    var y = b.abs()
+    while (y != BIG_INT_ZERO) {
+        val remainder = x % y
+        x = y
+        y = remainder.abs()
+    }
+    return x
+}
+
+private fun pow(base: BigInteger, exponent: Int): BigInteger {
+    require(exponent >= 0) { "exponent must be >= 0" }
+
+    var result = BIG_INT_ONE
+    var factor = base
+    var power = exponent
+
+    while (power > 0) {
+        if ((power and 1) == 1) {
+            result *= factor
+        }
+        if (power > 1) {
+            factor *= factor
+        }
+        power = power shr 1
+    }
+
+    return result
+}
+
 private class BigIntegerSerializer : KSerializer<BigInteger> {
     override val descriptor: SerialDescriptor =
         PrimitiveSerialDescriptor("BigInteger", PrimitiveKind.STRING)
@@ -26,7 +77,7 @@ private class BigIntegerSerializer : KSerializer<BigInteger> {
         encoder.encodeString(value.toString())
     }
 
-    override fun deserialize(decoder: Decoder): BigInteger = BigInteger(decoder.decodeString())
+    override fun deserialize(decoder: Decoder): BigInteger = parseBigInteger(decoder.decodeString())
 }
 
 @Serializable
@@ -35,19 +86,19 @@ data class Rational
 private constructor(
     val numerator: @Serializable(with = BigIntegerSerializer::class) BigInteger,
     val denominator: @Serializable(with = BigIntegerSerializer::class) BigInteger,
-) : Number(), Comparable<Rational>, java.io.Serializable {
+) : Number(), Comparable<Rational> {
     init {
-        require(denominator != BigInteger.ZERO) { "denominator is zero" }
+        require(denominator != BIG_INT_ZERO) { "denominator is zero" }
     }
 
     val isZero: Boolean
-        get() = numerator == BigInteger.ZERO
+        get() = numerator == BIG_INT_ZERO
 
     val isOne: Boolean
-        get() = numerator == BigInteger.ONE && denominator == BigInteger.ONE
+        get() = numerator == BIG_INT_ONE && denominator == BIG_INT_ONE
 
     val isMinusOne: Boolean
-        get() = numerator == BigInteger.ONE.negate() && denominator == BigInteger.ONE
+        get() = numerator == BIG_INT_MINUS_ONE && denominator == BIG_INT_ONE
 
     val isPositive: Boolean
         get() = numerator.signum() > 0
@@ -56,7 +107,7 @@ private constructor(
         get() = numerator.signum() < 0
 
     val isInteger: Boolean
-        get() = denominator == BigInteger.ONE
+        get() = denominator == BIG_INT_ONE
 
     val isProper: Boolean
         get() = numerator.abs() < denominator
@@ -65,16 +116,16 @@ private constructor(
         get() = numerator.abs() >= denominator
 
     val isUnit: Boolean
-        get() = numerator.abs() == BigInteger.ONE
+        get() = numerator.abs() == BIG_INT_ONE
 
     override fun toString(): String =
-        if (denominator == BigInteger.ONE) {
+        if (denominator == BIG_INT_ONE) {
             numerator.toString()
         } else {
             "$numerator/$denominator"
         }
 
-    override fun toDouble(): kotlin.Double = numerator.toDouble() / denominator.toDouble()
+    override fun toDouble(): kotlin.Double = numerator.toString().toDouble() / denominator.toString().toDouble()
 
     override fun toFloat(): Float = toDouble().toFloat()
 
@@ -123,31 +174,15 @@ private constructor(
     operator fun unaryMinus(): Rational = Rational(-numerator, denominator)
 
     override operator fun compareTo(other: Rational): Int {
-        // 1) sign check
         val signA = numerator.signum()
         val signB = other.numerator.signum()
         if (signA != signB) {
-            return signA - signB // e.g. -1 if signA < signB
+            return signA - signB
         }
-        // 2) both zero?
-        if (numerator == BigInteger.ZERO && other.numerator == BigInteger.ZERO) {
+        if (numerator == BIG_INT_ZERO && other.numerator == BIG_INT_ZERO) {
             return 0
         }
-        // 3) approximate exponent check
-        val expA = numerator.abs().bitLength() - denominator.bitLength()
-        val expB = other.numerator.abs().bitLength() - other.denominator.bitLength()
-        if (signA > 0) {
-            if (expA > expB + 1) return 1
-            if (expA < expB - 1) return -1
-        } else {
-            // both negative
-            if (expA > expB + 1) return -1
-            if (expA < expB - 1) return 1
-        }
-        // 4) precise cross multiplication
-        val cross1 = numerator.multiply(other.denominator)
-        val cross2 = other.numerator.multiply(denominator)
-        return cross1.compareTo(cross2)
+        return (numerator * other.denominator).compareTo(other.numerator * denominator)
     }
 
     /** mod operation: a mod b = a - floor(a/b) * b */
@@ -162,75 +197,49 @@ private constructor(
     operator fun rem(other: Rational): Rational = mod(other)
 
     fun round(mode: RoundMode): Rational {
-        val (q, r) = numerator.divideAndRemainder(denominator)
+        val q = numerator / denominator
+        val r = numerator % denominator
 
-        if (r == BigInteger.ZERO) {
-            // It's already an integer
-            return Rational(q, BigInteger.ONE)
+        if (r == BIG_INT_ZERO) {
+            return Rational(q, BIG_INT_ONE)
         }
 
         return when (mode) {
             RoundMode.FLOOR -> {
-                // floor = q unless remainder < 0 => then q - 1
                 if (numerator.signum() < 0) {
-                    // negative fraction => floor is q - 1
-                    Rational(q - BigInteger.ONE, BigInteger.ONE)
+                    Rational(q - BIG_INT_ONE, BIG_INT_ONE)
                 } else {
-                    // positive fraction => floor is q
-                    Rational(q, BigInteger.ONE)
+                    Rational(q, BIG_INT_ONE)
                 }
             }
             RoundMode.CEILING -> {
-                // ceiling = q unless remainder > 0 => then q + 1
                 if (numerator.signum() > 0) {
-                    Rational(q + BigInteger.ONE, BigInteger.ONE)
+                    Rational(q + BIG_INT_ONE, BIG_INT_ONE)
                 } else {
-                    Rational(q, BigInteger.ONE)
+                    Rational(q, BIG_INT_ONE)
                 }
             }
             RoundMode.TRUNC -> {
-                // truncate toward 0 => just q
-                Rational(q, BigInteger.ONE)
+                Rational(q, BIG_INT_ONE)
             }
             RoundMode.HALF_UP,
             RoundMode.HALF_DOWN,
             RoundMode.HALF_EVEN -> {
-                // We must decide how to handle the "exactly half" case
-                // Compare 2*|r| vs denominator
-                val absR = r.abs().shiftLeft(1) // multiply remainder by 2
+                val absR = r.abs() * BIG_INT_TWO
                 val cmp = absR.compareTo(denominator)
 
-                // if cmp < 0 => fraction part < 0.5 => q
-                // if cmp > 0 => fraction part > 0.5 => q + sign
-                // if cmp = 0 => fraction part == 0.5 => depends on half rule
                 when {
-                    cmp < 0 -> {
-                        // < 0.5 => q
-                        Rational(q, BigInteger.ONE)
-                    }
-                    cmp > 0 -> {
-                        // > 0.5 => q + sign
-                        Rational(q + r.signum().toBigInteger(), BigInteger.ONE)
-                    }
+                    cmp < 0 -> Rational(q, BIG_INT_ONE)
+                    cmp > 0 -> Rational(q + signAsBigInteger(r.signum()), BIG_INT_ONE)
                     else -> {
-                        // exactly 0.5
                         when (mode) {
-                            RoundMode.HALF_UP -> {
-                                // away from zero
-                                Rational(q + r.signum().toBigInteger(), BigInteger.ONE)
-                            }
-                            RoundMode.HALF_DOWN -> {
-                                // toward zero
-                                Rational(q, BigInteger.ONE)
-                            }
+                            RoundMode.HALF_UP -> Rational(q + signAsBigInteger(r.signum()), BIG_INT_ONE)
+                            RoundMode.HALF_DOWN -> Rational(q, BIG_INT_ONE)
                             RoundMode.HALF_EVEN -> {
-                                // choose nearest even integer
-                                if (q.and(BigInteger.ONE) == BigInteger.ZERO) {
-                                    // q is even
-                                    Rational(q, BigInteger.ONE)
+                                if (q % BIG_INT_TWO == BIG_INT_ZERO) {
+                                    Rational(q, BIG_INT_ONE)
                                 } else {
-                                    // q is odd
-                                    Rational(q + r.signum().toBigInteger(), BigInteger.ONE)
+                                    Rational(q + signAsBigInteger(r.signum()), BIG_INT_ONE)
                                 }
                             }
                             else -> throw IllegalStateException("Unexpected round mode")
@@ -260,7 +269,7 @@ private constructor(
     fun roundHalfEven(): Rational = round(RoundMode.HALF_EVEN)
 
     fun abs(): Rational =
-        if (numerator < BigInteger.ZERO) {
+        if (numerator < BIG_INT_ZERO) {
             Rational(-numerator, denominator)
         } else {
             this
@@ -268,35 +277,33 @@ private constructor(
 
     fun reciprocal(): Rational = Rational(denominator, numerator)
 
-    fun floor(): Rational = Rational(numerator / denominator, BigInteger.ONE)
+    fun floor(): Rational = floorRational()
 
-    fun ceil(): Rational =
-        Rational((numerator + denominator - BigInteger.ONE) / denominator, BigInteger.ONE)
+    fun ceil(): Rational = ceilRational()
 
-    fun round(): Rational =
-        Rational((numerator + denominator / BigInteger.valueOf(2)) / denominator, BigInteger.ONE)
+    fun round(): Rational = roundHalfUp()
 
     fun signum(): Int = numerator.signum()
 
     fun pow(n: Int): Rational =
         when {
-            n > 0 -> Rational.from(numerator.pow(n), denominator.pow(n))
+            n > 0 -> Rational.from(pow(numerator, n), pow(denominator, n))
             n == 0 -> one
-            else -> Rational.from(denominator.pow(-n), numerator.pow(-n)) // negative exponent
+            else -> Rational.from(pow(denominator, -n), pow(numerator, -n))
         }
 
     companion object {
-        val zero = Rational(BigInteger.ZERO, BigInteger.ONE)
-        val one = Rational(BigInteger.ONE, BigInteger.ONE)
-        val minusOne = Rational(BigInteger.ONE.negate(), BigInteger.ONE)
-        val half = Rational(BigInteger.ONE, BigInteger.valueOf(2))
+        val zero = Rational(BIG_INT_ZERO, BIG_INT_ONE)
+        val one = Rational(BIG_INT_ONE, BIG_INT_ONE)
+        val minusOne = Rational(BIG_INT_MINUS_ONE, BIG_INT_ONE)
+        val half = Rational(BIG_INT_ONE, BIG_INT_TWO)
 
         fun parse(s: String): Rational {
             val parts = s.split("/")
             if (parts.size == 1) {
-                return Rational(BigInteger(parts[0].trim()), BigInteger.ONE)
+                return Rational(parseBigInteger(parts[0]), BIG_INT_ONE)
             } else if (parts.size == 2) {
-                return Rational.from(BigInteger(parts[0].trim()), BigInteger(parts[1].trim()))
+                return Rational.from(parseBigInteger(parts[0]), parseBigInteger(parts[1]))
             } else {
                 throw IllegalArgumentException("invalid rational: $s")
             }
@@ -306,11 +313,10 @@ private constructor(
             from(numerator, denominator)
 
         fun from(numerator: BigInteger, denominator: BigInteger): Rational {
-            // GCD
-            val gcd = numerator.gcd(denominator)
-            val n = numerator / gcd
-            val d = denominator / gcd
-            if (d < BigInteger.ZERO) {
+            val divisor = gcd(numerator, denominator)
+            val n = numerator / divisor
+            val d = denominator / divisor
+            if (d < BIG_INT_ZERO) {
                 return Rational(-n, -d)
             } else {
                 return Rational(n, d)
@@ -318,17 +324,15 @@ private constructor(
         }
 
         fun from(numerator: Long, denominator: Long): Rational =
-            from(BigInteger.valueOf(numerator), BigInteger.valueOf(denominator))
+            from(bigInt(numerator), bigInt(denominator))
 
         fun from(numerator: Int, denominator: Int): Rational =
-            from(BigInteger.valueOf(numerator.toLong()), BigInteger.valueOf(denominator.toLong()))
+            from(numerator.toLong(), denominator.toLong())
 
-        fun from(numerator: BigInteger): Rational = Rational(numerator, BigInteger.ONE)
+        fun from(numerator: BigInteger): Rational = Rational(numerator, BIG_INT_ONE)
 
-        fun from(numerator: Long): Rational =
-            Rational(BigInteger.valueOf(numerator), BigInteger.ONE)
+        fun from(numerator: Long): Rational = Rational(bigInt(numerator), BIG_INT_ONE)
 
-        fun from(numerator: Int): Rational =
-            Rational(BigInteger.valueOf(numerator.toLong()), BigInteger.ONE)
+        fun from(numerator: Int): Rational = Rational.from(numerator.toLong())
     }
 }
